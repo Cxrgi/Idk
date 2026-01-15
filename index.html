@@ -1,0 +1,705 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Nitro Hill Climb - V4 STABLE</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #0d0d10;
+            font-family: 'Segoe UI', sans-serif;
+            touch-action: none;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100vh;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        #hud-top {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+        }
+
+        #timer-box {
+            background: rgba(0, 0, 0, 0.85);
+            color: #00ffcc;
+            padding: 10px 25px;
+            border-radius: 4px;
+            font-size: 32px;
+            font-weight: 900;
+            border: 2px solid #00ffcc;
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.2);
+            font-variant-numeric: tabular-nums;
+            font-family: monospace;
+        }
+
+        #controls {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px 40px;
+            pointer-events: auto;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            width: 90px;
+            height: 90px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 2px solid rgba(255, 255, 255, 0.15);
+            border-radius: 50%;
+            color: white;
+            font-size: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            cursor: pointer;
+            backdrop-filter: blur(4px);
+            transition: transform 0.1s, background 0.1s;
+        }
+
+        .btn:active, .btn.pressed {
+            background: rgba(0, 210, 255, 0.4);
+            transform: scale(0.95);
+            border-color: #00d2ff;
+        }
+
+        .gas-btn {
+            background: rgba(255, 100, 0, 0.2);
+            border-color: rgba(255, 100, 0, 0.5);
+            width: 120px;
+            height: 120px;
+            font-weight: 900;
+            font-size: 24px;
+            color: #ffaa55;
+        }
+        .gas-btn:active, .gas-btn.pressed {
+            background: rgba(255, 100, 0, 0.6);
+            border-color: #fff;
+            box-shadow: 0 0 30px rgba(255, 100, 0, 0.4);
+        }
+
+        .control-group {
+            display: flex;
+            gap: 25px;
+        }
+
+        /* Menu */
+        #menu-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(13, 13, 16, 0.98);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            z-index: 10;
+            pointer-events: auto;
+        }
+
+        h1 {
+            font-size: 56px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            background: linear-gradient(to bottom, #fff, #999);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0 0 10px 0;
+            text-shadow: 0 10px 20px rgba(0,0,0,0.5);
+        }
+
+        .play-btn {
+            padding: 20px 80px;
+            font-size: 28px;
+            background: #00ffcc;
+            color: #000;
+            border: none;
+            border-radius: 4px; /* Industrial look */
+            cursor: pointer;
+            font-weight: 900;
+            box-shadow: 0 0 20px rgba(0, 255, 204, 0.4);
+            transition: all 0.2s;
+            text-transform: uppercase;
+            margin-top: 30px;
+            clip-path: polygon(10% 0, 100% 0, 100% 100%, 0% 100%, 0% 20%);
+        }
+        .play-btn:hover {
+            transform: scale(1.05);
+            background: #fff;
+            box-shadow: 0 0 40px rgba(0, 255, 204, 0.6);
+        }
+
+        .hidden { display: none !important; }
+        
+        #stats {
+            text-align: center;
+            color: #888;
+            font-size: 16px;
+            margin-bottom: 20px;
+        }
+        #last-time {
+            font-size: 42px;
+            color: #00ffcc;
+            font-family: monospace;
+            font-weight: bold;
+            display: block;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="hud-top">
+            <div id="timer-box">00:00.00</div>
+        </div>
+        
+        <div id="controls">
+            <div class="control-group">
+                <div class="btn" id="btn-left">◀</div>
+                <div class="btn" id="btn-right">▶</div>
+            </div>
+            <div class="gas-btn btn" id="btn-gas">TURBO</div>
+        </div>
+    </div>
+
+    <div id="menu-screen">
+        <h1>Iron Rider</h1>
+        <div id="stats">
+            Heavy Physics Edition<br>
+            <span id="last-time"></span>
+            <span id="result-text">Drücke START</span>
+        </div>
+        <button class="play-btn" onclick="startGame()">START</button>
+    </div>
+
+<script>
+/**
+ * TUNING SETTINGS (V4 STABLE & HEAVY)
+ */
+const GRAVITY = 0.65;          // Etwas mehr Schwerkraft für "Gewicht"
+const FRICTION_AIR = 0.99;     
+const FRICTION_GROUND = 0.95;  
+const ENGINE_POWER = 5.0;      // Immer noch sehr stark
+const ROTATION_FORCE = 0.25;   // Stärkere Rotation, da das Bike jetzt schwerer ist
+const SEGMENT_WIDTH = 60;     
+const LEVEL_LENGTH = 1000;    
+const PHYSICS_ITERATIONS = 12; // Hohe Präzision
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+
+let width, height;
+function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const input = { gas: false, left: false, right: false };
+
+// ---------------------------------------------------------
+// PHYSIK ENGINE 
+// ---------------------------------------------------------
+
+class Point {
+    constructor(x, y, mass = 1, isWheel = false) {
+        this.x = x;
+        this.y = y;
+        this.oldx = x;
+        this.oldy = y;
+        this.mass = mass; // Masse ist jetzt wichtig!
+        this.isWheel = isWheel;
+        this.radius = isWheel ? 22 : 6;
+        this.grounded = false;
+    }
+
+    update() {
+        let vx = (this.x - this.oldx) * FRICTION_AIR;
+        let vy = (this.y - this.oldy) * FRICTION_AIR;
+
+        this.oldx = this.x;
+        this.oldy = this.y;
+
+        this.x += vx;
+        this.y += vy + GRAVITY * this.mass; // Masse beeinflusst Gravitation nicht direkt (Galilei), aber wir nutzen es für Trägheit in Constraints
+        this.grounded = false;
+    }
+
+    constrain(terrain) {
+        const idx = Math.floor(this.x / SEGMENT_WIDTH);
+        
+        // Multi-Segment Check
+        for(let i = -1; i <= 1; i++) {
+            let checkIdx = idx + i;
+            if (checkIdx >= 0 && checkIdx < terrain.points.length - 1) {
+                const p1 = terrain.points[checkIdx];
+                const p2 = terrain.points[checkIdx + 1];
+                
+                if(this.x >= p1.x && this.x <= p2.x) {
+                    const t = (this.x - p1.x) / (p2.x - p1.x);
+                    const groundY = p1.y + t * (p2.y - p1.y);
+
+                    if (this.y + this.radius > groundY) {
+                        const dy = (this.y + this.radius) - groundY;
+                        this.y -= dy;
+                        
+                        let vx = this.x - this.oldx;
+                        this.oldx = this.x - (vx * FRICTION_GROUND);
+                        
+                        // "Dämpfung" beim Aufprall
+                        this.oldy = this.y - ((this.y - this.oldy) * 0.1); 
+
+                        this.grounded = true;
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+}
+
+class Stick {
+    constructor(p1, p2, stiffness, invisible = false) {
+        this.p1 = p1;
+        this.p2 = p2;
+        this.length = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        this.stiffness = stiffness;
+        this.invisible = invisible;
+    }
+
+    update() {
+        const dx = this.p2.x - this.p1.x;
+        const dy = this.p2.y - this.p1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist === 0) return;
+
+        const diff = this.length - dist;
+        const percent = (diff / dist) / 2 * this.stiffness;
+        
+        // Massen-Gewichtung: Schwere Punkte bewegen sich weniger
+        const m1 = this.p1.mass;
+        const m2 = this.p2.mass;
+        const totalM = m1 + m2;
+        
+        // Inverse Masse Verteilung (Schwerer Punkt bewegt sich weniger)
+        // Wenn beide Masse 1 haben, ist factor 0.5. 
+        // Wenn p1 Masse 3 hat und p2 Masse 1 -> p1 bewegt sich 0.25, p2 bewegt sich 0.75
+        const f1 = m2 / totalM;
+        const f2 = m1 / totalM;
+
+        const offsetX = dx * percent;
+        const offsetY = dy * percent;
+
+        this.p1.x -= offsetX * f1;
+        this.p1.y -= offsetY * f1;
+        this.p2.x += offsetX * f2;
+        this.p2.y += offsetY * f2;
+    }
+}
+
+// ---------------------------------------------------------
+// GAME OBJECTS
+// ---------------------------------------------------------
+
+class Bike {
+    constructor(x, y) {
+        // --- KEY CHANGE: MASSENVERTEILUNG & GEOMETRIE ---
+        
+        // p0: Hinterrad (Leicht, damit es rotiert)
+        this.p0 = new Point(x, y, 1.0, true); 
+        
+        // p1: Vorderrad (SCHWER! Damit die Nase unten bleibt)
+        this.p1 = new Point(x + 100, y, 3.5, true);  
+        
+        // p2: Körper (Schwerpunkt nach vorne geschoben: x + 60 statt 45)
+        this.p2 = new Point(x + 60, y - 50, 2.0);   
+        
+        // p3: Kopf (Leicht)
+        this.p3 = new Point(x + 40, y - 100, 0.5); 
+
+        this.points = [this.p0, this.p1, this.p2, this.p3];
+
+        this.sticks = [
+            new Stick(this.p0, this.p2, 0.5), // Straffe Federung hinten
+            new Stick(this.p1, this.p2, 0.5), // Straffe Federung vorne
+            new Stick(this.p0, this.p1, 0.9, true), // Rahmen
+            new Stick(this.p2, this.p3, 0.9),      // Fahrer
+            new Stick(this.p0, this.p3, 0.9, true),
+            new Stick(this.p1, this.p3, 0.9, true)
+        ];
+    }
+
+    update(terrain) {
+        for (let p of this.points) p.update();
+        
+        for (let i = 0; i < PHYSICS_ITERATIONS; i++) {
+            for (let s of this.sticks) s.update();
+            for (let p of this.points) p.constrain(terrain);
+        }
+
+        // Steuerung
+        if (input.gas) {
+            let dx = this.p1.x - this.p0.x;
+            let dy = this.p1.y - this.p0.y;
+            let len = Math.hypot(dx, dy);
+            dx /= len; dy /= len;
+
+            if (this.p0.grounded) {
+                // Beschleunigung
+                this.p0.x += dx * ENGINE_POWER;
+                this.p0.y += dy * ENGINE_POWER;
+
+                // --- ANTI-WHEELIE LOGIC ---
+                // Wenn wir am Boden beschleunigen, drücken wir das Vorderrad künstlich runter
+                // Das simuliert das Vorlehnen des Fahrers
+                this.p1.y += 0.8; 
+                this.p1.x += 0.2; // Extra Grip vorne
+            } else {
+                 // Air Control
+                 this.p0.x += 0.15; 
+            }
+        }
+
+        // Rotation
+        if (input.left) this.applyTorque(-ROTATION_FORCE);
+        if (input.right) this.applyTorque(ROTATION_FORCE);
+    }
+
+    applyTorque(dir) {
+        // Torque wirkt auf die Räder relativ zum Chassis
+        this.p0.x -= dir * 4;
+        this.p0.y += dir * 4;
+        this.p1.x += dir * 4;
+        this.p1.y -= dir * 4;
+    }
+
+    draw(ctx) {
+        ctx.lineWidth = 5;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        // Rahmen (Grau/Industrial)
+        ctx.strokeStyle = '#888';
+        ctx.beginPath();
+        ctx.moveTo(this.p0.x, this.p0.y);
+        ctx.lineTo(this.p2.x, this.p2.y);
+        ctx.lineTo(this.p1.x, this.p1.y);
+        ctx.stroke();
+
+        // Motorblock (Highlight)
+        ctx.strokeStyle = '#ff6600';
+        ctx.lineWidth = 8;
+        ctx.beginPath();
+        ctx.moveTo(this.p0.x + (this.p2.x-this.p0.x)*0.3, this.p0.y + (this.p2.y-this.p0.y)*0.3);
+        ctx.lineTo(this.p2.x, this.p2.y);
+        ctx.stroke();
+        ctx.lineWidth = 5;
+
+        // Fahrer
+        ctx.strokeStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(this.p2.x, this.p2.y);
+        ctx.lineTo(this.p3.x, this.p3.y);
+        ctx.stroke();
+
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(this.p3.x, this.p3.y - 5, 8, 0, Math.PI*2);
+        ctx.fill();
+
+        this.drawWheel(ctx, this.p0);
+        this.drawWheel(ctx, this.p1);
+    }
+
+    drawWheel(ctx, p) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        
+        ctx.fillStyle = '#1a1a1a';
+        ctx.beginPath(); ctx.arc(0, 0, p.radius, 0, Math.PI*2); ctx.fill();
+        
+        // Felge
+        ctx.strokeStyle = '#ccc';
+        ctx.lineWidth = 4;
+        ctx.beginPath(); ctx.arc(0, 0, p.radius - 5, 0, Math.PI*2); ctx.stroke();
+
+        let rotation = p.x / p.radius;
+        ctx.rotate(rotation);
+        
+        // Speichen
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-p.radius+4, 0); ctx.lineTo(p.radius-4, 0);
+        ctx.moveTo(0, -p.radius+4); ctx.lineTo(0, p.radius-4);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+}
+
+class Terrain {
+    constructor() {
+        this.points = [];
+        this.generate();
+    }
+
+    generate() {
+        this.points = [];
+        let y = height / 2 + 300;
+        let x = 0;
+        let slope = 0;
+        let slopeTarget = 0;
+
+        for(let i=0; i<15; i++) {
+            this.points.push({x: x, y: y});
+            x += SEGMENT_WIDTH;
+        }
+
+        for(let i=0; i<LEVEL_LENGTH; i++) {
+            
+            // Etwas weniger extreme Sprünge als V3, dafür flüssiger
+            if (i % 6 === 0) { 
+                slopeTarget = (Math.random() - 0.5) * 45; 
+            }
+            
+            slope += (slopeTarget - slope) * 0.08;
+
+            if(slope > 40) slope = 40; 
+            if(slope < -35) slope = -35; 
+
+            y += slope;
+
+            let centerOffset = (y - (height/2 + 400));
+            if (Math.abs(centerOffset) > 500) {
+                 slopeTarget -= Math.sign(centerOffset) * 15;
+            }
+
+            this.points.push({x: x, y: y});
+            x += SEGMENT_WIDTH;
+        }
+
+        // Ziel
+        let finalY = y;
+        for(let i=0; i<30; i++) {
+            this.points.push({x: x, y: finalY});
+            x += SEGMENT_WIDTH;
+        }
+    }
+
+    draw(ctx, camX, camY) {
+        const startIdx = Math.max(0, Math.floor(camX / SEGMENT_WIDTH) - 2);
+        const endIdx = Math.min(this.points.length, Math.ceil((camX + width) / SEGMENT_WIDTH) + 2);
+
+        // Boden
+        ctx.fillStyle = '#1e1e24';
+        ctx.strokeStyle = '#00ffcc';
+        ctx.lineWidth = 4;
+        
+        ctx.beginPath();
+        if(this.points[startIdx]) ctx.moveTo(this.points[startIdx].x, this.points[startIdx].y);
+
+        for (let i = startIdx; i < endIdx; i++) {
+            let p = this.points[i];
+            let nextP = this.points[i+1];
+            if (nextP) {
+                let midX = (p.x + nextP.x) / 2;
+                let midY = (p.y + nextP.y) / 2;
+                ctx.quadraticCurveTo(p.x, p.y, midX, midY);
+            } else {
+                ctx.lineTo(p.x, p.y);
+            }
+        }
+
+        ctx.lineTo(this.points[endIdx-1].x, this.points[endIdx-1].y + 2000);
+        ctx.lineTo(this.points[startIdx].x, this.points[startIdx].y + 2000);
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+
+        // Ziellinie
+        const finishX = (15 + LEVEL_LENGTH) * SEGMENT_WIDTH;
+        if (finishX > camX && finishX < camX + width) {
+            let fy = this.points[15 + LEVEL_LENGTH].y;
+            this.drawFlag(ctx, finishX, fy);
+        }
+    }
+
+    drawFlag(ctx, x, y) {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(x, y - 150, 6, 150);
+        for(let r=0; r<6; r++) {
+            for(let c=0; c<4; c++) {
+                ctx.fillStyle = (r+c)%2===0 ? 'black' : '#00ffcc';
+                ctx.fillRect(x + 6 + c*12, y - 150 + r*12, 12, 12);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------
+// MAIN LOOP
+// ---------------------------------------------------------
+
+let bike, terrain;
+let gameState = 'MENU';
+let startTime = 0;
+let finishTime = 0;
+let timerActive = false;
+let camX = 0, camY = 0;
+
+function initGame() {
+    terrain = new Terrain(); 
+    bike = new Bike(200, terrain.points[3].y - 100);
+    
+    gameState = 'PLAYING';
+    timerActive = false;
+    startTime = 0;
+    camX = 0;
+    camY = 0;
+    
+    document.getElementById('timer-box').innerText = "00:00.00";
+    document.getElementById('menu-screen').classList.add('hidden');
+    requestAnimationFrame(loop);
+}
+
+function stopGame() {
+    gameState = 'FINISHED';
+    let timeStr = formatTime(finishTime - startTime);
+    document.getElementById('last-time').innerText = timeStr;
+    document.getElementById('result-text').innerText = "Ziel Erreicht!";
+    document.getElementById('menu-screen').classList.remove('hidden');
+}
+
+function update() {
+    if (gameState !== 'PLAYING') return;
+
+    bike.update(terrain);
+
+    if (input.gas && !timerActive) {
+        timerActive = true;
+        startTime = Date.now();
+    }
+    if (timerActive) {
+        document.getElementById('timer-box').innerText = formatTime(Date.now() - startTime);
+    }
+
+    let targetCamX = bike.p2.x - width * 0.3;
+    let targetCamY = bike.p2.y - height * 0.6;
+    
+    camX += (targetCamX - camX) * 0.1;
+    camY += (targetCamY - camY) * 0.1;
+    if (camX < 0) camX = 0;
+
+    if (bike.p2.x > (15 + LEVEL_LENGTH) * SEGMENT_WIDTH) {
+        finishTime = Date.now();
+        stopGame();
+    }
+
+    if (bike.p3.constrain(terrain)) {
+        setTimeout(initGame, 500);
+    }
+    // Abyss check
+    let currentIdx = Math.floor(bike.p2.x / SEGMENT_WIDTH);
+    if (currentIdx >= 0 && currentIdx < terrain.points.length) {
+        if (bike.p2.y > terrain.points[currentIdx].y + 600) setTimeout(initGame, 500);
+    }
+}
+
+function draw() {
+    ctx.fillStyle = '#0d0d10';
+    ctx.fillRect(0, 0, width, height);
+
+    ctx.save();
+    ctx.translate(-camX * 0.1, -camY * 0.1);
+    
+    // Industrial Background
+    ctx.fillStyle = '#15151a';
+    ctx.beginPath();
+    ctx.moveTo(-1000, height);
+    for(let i=0; i<100; i++) {
+        let h = Math.random() * 150 + 100;
+        ctx.fillRect(i * 150 - 1000, height - h, 160, h); // Building shapes
+    }
+    ctx.fill();
+    ctx.restore();
+
+    ctx.save();
+    ctx.translate(-camX, -camY);
+    terrain.draw(ctx, camX, camY);
+    bike.draw(ctx);
+    ctx.restore();
+}
+
+function loop() {
+    if (gameState === 'PLAYING') {
+        update();
+        draw();
+        requestAnimationFrame(loop);
+    }
+}
+
+function formatTime(ms) {
+    let min = Math.floor(ms / 60000);
+    let sec = Math.floor((ms % 60000) / 1000);
+    let cent = Math.floor((ms % 1000) / 10);
+    return (min<10?"0":"")+min + ":" + (sec<10?"0":"")+sec + "." + (cent<10?"0":"")+cent;
+}
+
+function startGame() { initGame(); }
+
+const setupBtn = (id, k) => {
+    const b = document.getElementById(id);
+    const start = (e) => { e.preventDefault(); input[k] = true; b.classList.add('pressed'); };
+    const end = (e) => { e.preventDefault(); input[k] = false; b.classList.remove('pressed'); };
+    b.addEventListener('mousedown', start); b.addEventListener('touchstart', start);
+    b.addEventListener('mouseup', end); b.addEventListener('touchend', end);
+    b.addEventListener('mouseleave', end);
+};
+setupBtn('btn-gas', 'gas');
+setupBtn('btn-left', 'left');
+setupBtn('btn-right', 'right');
+
+window.addEventListener('keydown', e => {
+    if(e.code==='ArrowUp'||e.code==='KeyW'||e.code==='Space') input.gas=true;
+    if(e.code==='ArrowLeft'||e.code==='KeyA') input.left=true;
+    if(e.code==='ArrowRight'||e.code==='KeyD') input.right=true;
+});
+window.addEventListener('keyup', e => {
+    if(e.code==='ArrowUp'||e.code==='KeyW'||e.code==='Space') input.gas=false;
+    if(e.code==='ArrowLeft'||e.code==='KeyA') input.left=false;
+    if(e.code==='ArrowRight'||e.code==='KeyD') input.right=false;
+});
+
+</script>
+</body>
+</html>
