@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Nitro Hill Climb - Custom Engine</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #202028;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            touch-action: none; /* Verhindert Zoom/Scroll auf Mobile */
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100vh;
+        }
+
+        /* UI Overlay */
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        /* Timer oben rechts */
+        #hud-top {
+            display: flex;
+            justify-content: flex-end;
+            padding: 20px;
+        }
+        #timer-box {
+            background: rgba(0, 0, 0, 0.6);
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 24px;
+            font-weight: bold;
+            border: 2px solid #00d2ff;
+            box-shadow: 0 0 10px rgba(0, 210, 255, 0.3);
+        }
+
+        /* Controls unten */
+        #controls {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+            pointer-events: auto; /* Buttons müssen klickbar sein */
+        }
+
+        .btn {
+            width: 80px;
+            height: 80px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            color: white;
+            font-size: 30px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            cursor: pointer;
+            transition: background 0.1s;
+        }
+
+        .btn:active, .btn.pressed {
+            background: rgba(0, 210, 255, 0.4);
+            border-color: #00d2ff;
+            transform: scale(0.95);
+        }
+
+        .gas-btn {
+            background: rgba(0, 255, 100, 0.2);
+            border-color: rgba(0, 255, 100, 0.5);
+            width: 100px;
+            height: 100px;
+        }
+        .gas-btn:active, .gas-btn.pressed {
+            background: rgba(0, 255, 100, 0.5);
+        }
+
+        .control-group {
+            display: flex;
+            gap: 20px;
+        }
+
+        /* Menü Screen */
+        #menu-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(15, 15, 20, 0.95);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            z-index: 10;
+            pointer-events: auto;
+        }
+
+        h1 {
+            font-size: 48px;
+            text-transform: uppercase;
+            letter-spacing: 4px;
+            background: linear-gradient(to right, #00d2ff, #3a7bd5);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 10px;
+            text-shadow: 0 0 20px rgba(0, 210, 255, 0.5);
+        }
+
+        .play-btn {
+            margin-top: 40px;
+            padding: 15px 60px;
+            font-size: 24px;
+            background: #00d2ff;
+            color: #000;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            font-weight: bold;
+            box-shadow: 0 0 20px rgba(0, 210, 255, 0.6);
+            transition: transform 0.2s;
+        }
+        .play-btn:hover {
+            transform: scale(1.05);
+        }
+
+        .hidden {
+            display: none !important;
+        }
+        
+        #result-text {
+            font-size: 20px;
+            color: #ccc;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="hud-top">
+            <div id="timer-box">00:00.00</div>
+        </div>
+        
+        <div id="controls">
+            <div class="control-group">
+                <div class="btn" id="btn-left">↺</div>
+                <div class="btn" id="btn-right">↻</div>
+            </div>
+            <div class="gas-btn btn" id="btn-gas">GO</div>
+        </div>
+    </div>
+
+    <div id="menu-screen">
+        <h1>Moto Climber</h1>
+        <p>Erreiche das Ziel in Rekordzeit.</p>
+        <p id="result-text">Drücke Start, um zu beginnen.</p>
+        <button class="play-btn" onclick="startGame()">PLAY</button>
+    </div>
+
+<script>
+/**
+ * 2D PHYSIK ENGINE & GAME LOGIC
+ */
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+
+// Game State
+let gameState = 'MENU'; // MENU, PLAYING, FINISHED
+let startTime = 0;
+let finishTime = 0;
+let timerRunning = false;
+let width, height;
+
+// Eingabe Status
+const input = {
+    gas: false,
+    left: false,
+    right: false
+};
+
+// Konstanten
+const GRAVITY = 0.5;
+const FRICTION = 0.98; // Luftwiderstand
+const GROUND_FRICTION = 0.9;
+const ENGINE_POWER = 1.5;
+const ROTATION_SPEED = 0.4;
+const SEGMENT_WIDTH = 40; // Breite eines Bodensegments
+const LEVEL_LENGTH = 300; // Anzahl der Segmente (Länge des Levels) -> ca 60 Sekunden Fahrzeit
+
+// Resize Handler
+function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---------------------------------------------------------
+// PHYSIK KLASSEN (Verlet Integration)
+// ---------------------------------------------------------
+
+class Point {
+    constructor(x, y, mass = 1, isWheel = false) {
+        this.x = x;
+        this.y = y;
+        this.oldx = x;
+        this.oldy = y;
+        this.mass = mass;
+        this.isWheel = isWheel;
+        this.radius = isWheel ? 20 : 5;
+        this.collided = false;
+    }
+
+    update() {
+        // Verlet Integration
+        let vx = (this.x - this.oldx) * FRICTION;
+        let vy = (this.y - this.oldy) * FRICTION;
+
+        this.oldx = this.x;
+        this.oldy = this.y;
+
+        this.x += vx;
+        this.y += vy;
+        this.y += GRAVITY * this.mass;
+    }
+
+    constrain(terrain) {
+        // Bodenkollision
+        // Wir finden das Bodensegment unter dem Punkt
+        const segmentIndex = Math.floor(this.x / SEGMENT_WIDTH);
+        
+        if (segmentIndex >= 0 && segmentIndex < terrain.points.length - 1) {
+            const p1 = terrain.points[segmentIndex];
+            const p2 = terrain.points[segmentIndex + 1];
+            
+            // Lineare Interpolation für exakte Höhe bei X
+            const t = (this.x - p1.x) / (p2.x - p1.x);
+            const groundY = p1.y + t * (p2.y - p1.y);
+
+            // Wenn Punkt unter Boden (plus Radius)
+            if (this.y + this.radius > groundY) {
+                // Kollisionsantwort
+                const vy = this.y - this.oldy;
+                
+                // Position korrigieren
+                this.y = groundY - this.radius;
+                
+                // Einfache Reibung am Boden
+                const vx = this.x - this.oldx;
+                this.oldx = this.x - (vx * GROUND_FRICTION);
+
+                this.collided = true;
+                return true;
+            }
+        }
+        this.collided = false;
+        return false;
+    }
+}
+
+class Stick {
+    constructor(p1, p2, stiffness = 1, hidden = false) {
+        this.p1 = p1;
+        this.p2 = p2;
+        this.length = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        this.stiffness = stiffness;
+        this.hidden = hidden;
+    }
+
+    update() {
+        const dx = this.p2.x - this.p1.x;
+        const dy = this.p2.y - this.p1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const diff = this.length - dist;
+        const percent = (diff / dist) / 2 * this.stiffness;
+        const offsetX = dx * percent;
+        const offsetY = dy * percent;
+
+        // Massen-Gewichtung (einfach gehalten: gleich)
+        this.p1.x -= offsetX;
+        this.p1.y -= offsetY;
+        this.p2.x += offsetX;
+        this.p2.y += offsetY;
+    }
+}
+
+// ---------------------------------------------------------
+// SPIEL OBJEKTE
+// ---------------------------------------------------------
+
+class Bike {
+    constructor(x, y) {
+        // Wir bauen ein Bike aus Punkten und Sticks
+        // p0: Hinterrad, p1: Vorderrad, p2: Körper, p3: Kopf (für Form)
+        
+        this.p0 = new Point(x, y, 1, true);       // Hinterrad
+        this.p1 = new Point(x + 90, y, 1, true);  // Vorderrad
+        this.p2 = new Point(x + 45, y - 50, 1);   // Chassis Mitte
+        this.p3 = new Point(x + 30, y - 90, 0.5); // Fahrer Kopf/Lenker
+
+        this.points = [this.p0, this.p1, this.p2, this.p3];
+
+        this.sticks = [
+            new Stick(this.p0, this.p2, 0.2), // Dämpfer hinten (weich)
+            new Stick(this.p1, this.p2, 0.2), // Dämpfer vorne (weich)
+            new Stick(this.p0, this.p1, 0.9, true), // Achsenabstand (hart)
+            new Stick(this.p2, this.p3, 0.8), // Körperstruktur
+            new Stick(this.p0, this.p3, 0.8, true), // Stabilität
+            new Stick(this.p1, this.p3, 0.8, true)  // Stabilität
+        ];
+    }
+
+    update(terrain) {
+        // Physics update
+        for (let p of this.points) p.update();
+        // Constraints mehrmals lösen für Stabilität
+        for (let i = 0; i < 5; i++) {
+            for (let s of this.sticks) s.update();
+            for (let p of this.points) p.constrain(terrain);
+        }
+
+        // Steuerung
+        
+        // 1. Timer Start
+        if ((input.gas || input.left || input.right) && !timerRunning && gameState === 'PLAYING') {
+            timerRunning = true;
+            startTime = Date.now();
+        }
+
+        // 2. Gas geben (Kraft auf Hinterrad)
+        if (input.gas) {
+            // Vektor entlang des Bodens finden
+            const dx = this.p1.x - this.p0.x;
+            const dy = this.p1.y - this.p0.y;
+            const len = Math.sqrt(dx*dx + dy*dy);
+            
+            // Kraftvektor normalisieren
+            const nx = dx / len;
+            const ny = dy / len;
+
+            // Kraft auf Hinterrad anwenden (nur wenn Bodenberührung)
+            // Wir erlauben etwas "Air Control" für Spaß, aber weniger stark
+            const force = this.p0.collided ? ENGINE_POWER : ENGINE_POWER * 0.1;
+
+            this.p0.x += nx * force;
+            this.p0.y += ny * force;
+            
+            // Wheelie prevention assistance: drücke vorderrad leicht runter
+            if (!this.p1.collided) {
+                this.p1.y += 0.2; 
+            }
+        }
+
+        // 3. Rotation (Neigung)
+        if (input.left) {
+            // Nach hinten lehnen (Vorderrad hoch, Hinterrad runter/fester)
+            this.rotate(-ROTATION_SPEED);
+        }
+        if (input.right) {
+            // Nach vorne lehnen
+            this.rotate(ROTATION_SPEED);
+        }
+    }
+
+    rotate(dir) {
+        // Einfache Rotation um den Schwerpunkt (p2)
+        const cx = this.p2.x;
+        const cy = this.p2.y;
+        
+        // Wir manipulieren p0 und p1 Positionen um eine Drehung zu simulieren
+        // Dies ist in Verlet Physik ein "Hack", funktioniert aber gut für Arcade Games
+        this.p0.x -= dir * 3;
+        this.p0.y += dir * 3;
+        this.p1.x += dir * 3;
+        this.p1.y -= dir * 3;
+    }
+
+    draw(ctx) {
+        ctx.lineWidth = 4;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        // Chassis zeichnen (Neon Look)
+        ctx.strokeStyle = '#00d2ff';
+        ctx.beginPath();
+        ctx.moveTo(this.p0.x, this.p0.y);
+        ctx.lineTo(this.p2.x, this.p2.y);
+        ctx.lineTo(this.p3.x, this.p3.y);
+        ctx.lineTo(this.p1.x, this.p1.y);
+        ctx.stroke();
+
+        // Fahrer / Körper (einfach)
+        ctx.strokeStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(this.p2.x, this.p2.y);
+        ctx.lineTo(this.p3.x, this.p3.y - 10);
+        ctx.stroke();
+
+        // Räder zeichnen
+        this.drawWheel(ctx, this.p0);
+        this.drawWheel(ctx, this.p1);
+    }
+
+    drawWheel(ctx, p) {
+        ctx.fillStyle = '#111';
+        ctx.strokeStyle = '#333';
+        ctx.lineWidth = 3;
+        
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+
+        // Felgen / Speichen Simulation (rotiert basierend auf X Position)
+        ctx.strokeStyle = '#666';
+        ctx.lineWidth = 2;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.rotate(p.x / p.radius); // Rotation basierend auf Wegstrecke
+        
+        ctx.beginPath();
+        ctx.moveTo(-p.radius + 4, 0);
+        ctx.lineTo(p.radius - 4, 0);
+        ctx.moveTo(0, -p.radius + 4);
+        ctx.lineTo(0, p.radius - 4);
+        ctx.stroke();
+        
+        ctx.restore();
+    }
+}
+
+class Terrain {
+    constructor() {
+        this.points = [];
+        this.generate();
+    }
+
+    generate() {
+        let y = height / 2 + 100;
+        let slope = 0;
+        
+        // Start Plattform (flach)
+        for (let i = 0; i < 10; i++) {
+            this.points.push({x: i * SEGMENT_WIDTH, y: y});
+        }
+
+        // Random Generierung (Hügel)
+        for (let i = 10; i < LEVEL_LENGTH; i++) {
+            // Perlin Noise Ersatz: Überlagerung von Sinuswellen + Random
+            const progress = i / LEVEL_LENGTH;
+            
+            // Schwierigkeit steigt leicht an
+            const amp = 30 + (progress * 50); 
+            const freq = 0.1 + (Math.random() * 0.1);
+
+            slope += (Math.random() - 0.5) * amp * 0.5;
+            // Begrenzen der Steigung damit es fahrbar bleibt
+            if(slope > 40) slope = 40;
+            if(slope < -40) slope = -40;
+
+            // Glättung
+            y += slope * 0.5;
+
+            // Boden sollte nicht zu hoch oder zu tief werden
+            if (y < 200) { y = 200; slope = 10; } // Zu hoch (Screen Top)
+            if (y > height + 400) { y = height + 400; slope = -10; } // Zu tief
+
+            this.points.push({x: i * SEGMENT_WIDTH, y: y});
+        }
+
+        // Zielgerade (flach)
+        let lastY = this.points[this.points.length-1].y;
+        for(let i=0; i<20; i++) {
+             this.points.push({x: (LEVEL_LENGTH + i) * SEGMENT_WIDTH, y: lastY});
+        }
+    }
+
+    draw(ctx, cameraX) {
+        // Optimierung: Nur sichtbare Segmente zeichnen
+        const startIdx = Math.floor(cameraX / SEGMENT_WIDTH);
+        const endIdx = startIdx + Math.ceil(width / SEGMENT_WIDTH) + 2;
+
+        ctx.fillStyle = '#1a1a1a'; // Boden Farbe
+        ctx.strokeStyle = '#00ff66'; // Neon Linie oben
+        ctx.lineWidth = 4;
+
+        ctx.beginPath();
+        if (this.points[startIdx]) {
+            ctx.moveTo(this.points[startIdx].x, this.points[startIdx].y);
+        }
+
+        for (let i = startIdx; i < endIdx && i < this.points.length; i++) {
+            const p = this.points[i];
+            // Bezier Kurven für smooth look statt harter Ecken
+            if (i < this.points.length - 1) {
+                const nextP = this.points[i+1];
+                const xc = (p.x + nextP.x) / 2;
+                const yc = (p.y + nextP.y) / 2;
+                ctx.quadraticCurveTo(p.x, p.y, xc, yc);
+            } else {
+                ctx.lineTo(p.x, p.y);
+            }
+        }
+
+        // Füllen nach unten
+        const lastDrawX = (Math.min(endIdx, this.points.length-1)) * SEGMENT_WIDTH;
+        ctx.lineTo(lastDrawX, height * 2); 
+        ctx.lineTo(Math.max(0, (startIdx-1)*SEGMENT_WIDTH), height * 2);
+        ctx.closePath();
+        
+        ctx.fill();
+        ctx.stroke();
+
+        // Ziellinie
+        const finishX = (LEVEL_LENGTH) * SEGMENT_WIDTH;
+        if (finishX > cameraX && finishX < cameraX + width) {
+            this.drawFinishFlag(ctx, finishX, this.points[LEVEL_LENGTH].y);
+        }
+    }
+
+    drawFinishFlag(ctx, x, y) {
+        ctx.save();
+        ctx.translate(x, y);
+        // Pfosten
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, -100, 5, 100);
+        // Flagge (Schachbrett)
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(5, -100, 60, 40);
+        ctx.fillStyle = '#000';
+        ctx.fillRect(5, -100, 30, 20);
+        ctx.fillRect(35, -80, 30, 20);
+        ctx.restore();
+    }
+}
+
+// ---------------------------------------------------------
+// MAIN
+// ---------------------------------------------------------
+
+let bike;
+let terrain;
+let cameraX = 0;
+
+function initGame() {
+    terrain = new Terrain();
+    bike = new Bike(100, height / 2);
+    
+    gameState = 'PLAYING';
+    startTime = 0;
+    finishTime = 0;
+    timerRunning = false;
+    updateTimerDisplay(0);
+    
+    // UI Update
+    document.getElementById('menu-screen').classList.add('hidden');
+    
+    loop();
+}
+
+function startGame() {
+    initGame();
+}
+
+function gameOver() {
+    gameState = 'FINISHED';
+    timerRunning = false;
+    document.getElementById('menu-screen').classList.remove('hidden');
+    document.getElementById('result-text').innerText = "Deine Zeit: " + formatTime(finishTime - startTime);
+}
+
+function update() {
+    if (gameState !== 'PLAYING') return;
+
+    bike.update(terrain);
+
+    // Kamera folgt dem Bike (mit etwas offset)
+    let targetCamX = bike.p2.x - width * 0.3;
+    // Kamera darf nicht nach links scrollen (optional) oder unter 0 gehen
+    if (targetCamX < 0) targetCamX = 0;
+    
+    // Smooth Camera
+    cameraX += (targetCamX - cameraX) * 0.1;
+
+    // Timer Logic
+    if (timerRunning) {
+        const current = Date.now();
+        updateTimerDisplay(current - startTime);
+    }
+
+    // Win Condition
+    const finishX = LEVEL_LENGTH * SEGMENT_WIDTH;
+    if (bike.p2.x >= finishX) {
+        finishTime = Date.now();
+        updateTimerDisplay(finishTime - startTime);
+        setTimeout(gameOver, 1000); // Kurz warten dann Menu
+    }
+    
+    // Lose Condition (Kopf berührt Boden)
+    // Einfacher Check: Wenn p3 (Kopf) sehr nah am Boden ist ODER Y sehr tief fällt
+    if (bike.p3.y > height + 200) {
+        // Fall in Abgrund
+        initGame(); // Instant Reset
+    }
+    // Kopfkollision (etwas komplexer, vereinfacht: wenn Kopf unter Radhöhe kommt und rotiert ist)
+    if (bike.p3.y > bike.p0.y && bike.p3.y > bike.p1.y) {
+         // Einfacher Check ob Kopf den Boden berührt
+         if(bike.p3.constrain(terrain)) {
+             // Crash!
+             // Man könnte hier eine Explosion einbauen, wir resetten einfach
+             initGame();
+         }
+    }
+}
+
+function draw() {
+    // Background Clear
+    ctx.fillStyle = '#202028';
+    ctx.fillRect(0, 0, width, height);
+
+    // Parallax Background (Himmelskörper / Berge im Hintergrund)
+    ctx.save();
+    // Hintergrund bewegt sich langsamer
+    ctx.translate(-cameraX * 0.2, 0); 
+    
+    // Sonne / Mond
+    ctx.fillStyle = '#ffcc00';
+    ctx.beginPath();
+    ctx.arc(width - 100 + cameraX * 0.2, 100, 40, 0, Math.PI*2);
+    ctx.fill();
+    // Glow
+    ctx.fillStyle = 'rgba(255, 204, 0, 0.2)';
+    ctx.beginPath();
+    ctx.arc(width - 100 + cameraX * 0.2, 100, 80, 0, Math.PI*2);
+    ctx.fill();
+
+    // Dekorative Berge im Hintergrund
+    ctx.fillStyle = '#2a2a35';
+    ctx.beginPath();
+    ctx.moveTo(0, height);
+    for(let i=0; i<width + cameraX*0.5; i+=200) {
+        ctx.lineTo(i, height - 200 - Math.random()*100);
+    }
+    ctx.lineTo(width + cameraX, height);
+    ctx.fill();
+    ctx.restore();
+
+    // World Rendering
+    ctx.save();
+    ctx.translate(-cameraX, 0);
+
+    terrain.draw(ctx, cameraX);
+    bike.draw(ctx);
+
+    ctx.restore();
+}
+
+function loop() {
+    if(gameState === 'PLAYING') {
+        update();
+        draw();
+        requestAnimationFrame(loop);
+    }
+}
+
+// ---------------------------------------------------------
+// INPUT HANDLER & UTILS
+// ---------------------------------------------------------
+
+function formatTime(ms) {
+    let min = Math.floor(ms / 60000);
+    let sec = Math.floor((ms % 60000) / 1000);
+    let cent = Math.floor((ms % 1000) / 10);
+    return (min < 10 ? "0" + min : min) + ":" + 
+           (sec < 10 ? "0" + sec : sec) + "." + 
+           (cent < 10 ? "0" + cent : cent);
+}
+
+function updateTimerDisplay(ms) {
+    document.getElementById('timer-box').innerText = formatTime(ms);
+}
+
+// Touch / Maus Events für UI Buttons
+const setupBtn = (id, key) => {
+    const btn = document.getElementById(id);
+    const press = (e) => { e.preventDefault(); input[key] = true; btn.classList.add('pressed'); };
+    const release = (e) => { e.preventDefault(); input[key] = false; btn.classList.remove('pressed'); };
+    
+    btn.addEventListener('mousedown', press);
+    btn.addEventListener('mouseup', release);
+    btn.addEventListener('mouseleave', release);
+    btn.addEventListener('touchstart', press);
+    btn.addEventListener('touchend', release);
+};
+
+setupBtn('btn-gas', 'gas');
+setupBtn('btn-left', 'left');
+setupBtn('btn-right', 'right');
+
+// Keyboard Support
+window.addEventListener('keydown', (e) => {
+    if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') input.gas = true;
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = true;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = true;
+});
+
+window.addEventListener('keyup', (e) => {
+    if (e.code === 'ArrowUp' || e.code === 'KeyW' || e.code === 'Space') input.gas = false;
+    if (e.code === 'ArrowLeft' || e.code === 'KeyA') input.left = false;
+    if (e.code === 'ArrowRight' || e.code === 'KeyD') input.right = false;
+});
+
+// Initial Render für Menu Hintergrund
+resize();
+
+</script>
+</body>
+</html>
