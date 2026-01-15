@@ -1,0 +1,692 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Nitro Hill Climb - V3 SPEED EDITION</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #111;
+            font-family: 'Segoe UI', sans-serif;
+            touch-action: none;
+        }
+
+        #gameCanvas {
+            display: block;
+            width: 100%;
+            height: 100vh;
+        }
+
+        #ui-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            pointer-events: none;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        #hud-top {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px;
+            align-items: flex-start;
+        }
+
+        #timer-box {
+            background: rgba(0, 0, 0, 0.8);
+            color: #fff;
+            padding: 10px 25px;
+            border-radius: 8px;
+            font-size: 32px;
+            font-weight: 900;
+            border-bottom: 4px solid #ff0055;
+            font-variant-numeric: tabular-nums;
+            box-shadow: 0 5px 15px rgba(255, 0, 85, 0.3);
+        }
+
+        #controls {
+            display: flex;
+            justify-content: space-between;
+            padding: 20px 40px;
+            pointer-events: auto;
+            margin-bottom: 20px;
+        }
+
+        .btn {
+            width: 90px;
+            height: 90px;
+            background: rgba(255, 255, 255, 0.05);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 50%;
+            color: white;
+            font-size: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            user-select: none;
+            cursor: pointer;
+            backdrop-filter: blur(5px);
+            transition: transform 0.1s, background 0.1s;
+        }
+
+        .btn:active, .btn.pressed {
+            background: rgba(0, 210, 255, 0.5);
+            transform: scale(0.92);
+            border-color: #fff;
+        }
+
+        .gas-btn {
+            background: rgba(255, 50, 50, 0.2);
+            border-color: rgba(255, 50, 50, 0.5);
+            width: 120px;
+            height: 120px;
+            font-weight: 900;
+            font-size: 28px;
+            color: #ffcccc;
+        }
+        .gas-btn:active, .gas-btn.pressed {
+            background: rgba(255, 50, 50, 0.7);
+            box-shadow: 0 0 20px #ff3232;
+        }
+
+        .control-group {
+            display: flex;
+            gap: 25px;
+        }
+
+        /* Menu */
+        #menu-screen {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(10, 10, 12, 0.98);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            z-index: 10;
+            pointer-events: auto;
+        }
+
+        h1 {
+            font-size: 60px;
+            font-style: italic;
+            text-transform: uppercase;
+            background: linear-gradient(to right, #ff0055, #ffcc00);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin: 0 0 10px 0;
+            text-shadow: 0 5px 20px rgba(255, 0, 85, 0.3);
+        }
+
+        .play-btn {
+            padding: 20px 90px;
+            font-size: 32px;
+            background: linear-gradient(90deg, #ff0055, #ff3333);
+            color: #fff;
+            border: none;
+            border-radius: 50px;
+            cursor: pointer;
+            font-weight: 900;
+            box-shadow: 0 10px 40px rgba(255, 0, 85, 0.5);
+            transition: all 0.2s;
+            text-transform: uppercase;
+            margin-top: 30px;
+        }
+        .play-btn:hover {
+            transform: scale(1.05) translateY(-2px);
+            box-shadow: 0 15px 50px rgba(255, 0, 85, 0.7);
+        }
+
+        .hidden { display: none !important; }
+        
+        #stats {
+            text-align: center;
+            color: #888;
+            font-size: 18px;
+            line-height: 1.5;
+        }
+        #last-time {
+            font-size: 36px;
+            color: #fff;
+            font-weight: bold;
+            display: block;
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <div id="ui-layer">
+        <div id="hud-top">
+            <div id="timer-box">00:00.00</div>
+        </div>
+        
+        <div id="controls">
+            <div class="control-group">
+                <div class="btn" id="btn-left">↶</div>
+                <div class="btn" id="btn-right">↷</div>
+            </div>
+            <div class="gas-btn btn" id="btn-gas">GO</div>
+        </div>
+    </div>
+
+    <div id="menu-screen">
+        <h1>Speed Moto</h1>
+        <div id="stats">
+            High Speed Edition<br>
+            <span id="last-time"></span>
+            <span id="result-text">Bereit für den Sprung?</span>
+        </div>
+        <button class="play-btn" onclick="startGame()">START</button>
+    </div>
+
+<script>
+/**
+ * TUNING SETTINGS (SPEED VERSION)
+ */
+const GRAVITY = 0.6;
+const FRICTION_AIR = 0.992;   // Sehr wenig Luftwiderstand für weite Sprünge
+const FRICTION_GROUND = 0.98; // Sehr hoher Grip (weniger Rutschen)
+const ENGINE_POWER = 6.0;     // Extrem starker Motor
+const ROTATION_FORCE = 0.18;  // Gute Kontrolle in der Luft
+const SEGMENT_WIDTH = 60;     // Breitere Segmente für weichere Hügel
+const LEVEL_LENGTH = 1000;    // Sehr langes Level (ca 60-70 Sek bei Full Speed)
+const PHYSICS_ITERATIONS = 10; // Mehr Berechnungen pro Frame für Stabilität bei Speed
+
+// Canvas
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d', { alpha: false });
+
+let width, height;
+function resize() {
+    width = window.innerWidth;
+    height = window.innerHeight;
+    canvas.width = width;
+    canvas.height = height;
+}
+window.addEventListener('resize', resize);
+resize();
+
+const input = { gas: false, left: false, right: false };
+
+// ---------------------------------------------------------
+// PHYSIK ENGINE (High Performance Verlet)
+// ---------------------------------------------------------
+
+class Point {
+    constructor(x, y, mass = 1, isWheel = false) {
+        this.x = x;
+        this.y = y;
+        this.oldx = x;
+        this.oldy = y;
+        this.mass = mass;
+        this.isWheel = isWheel;
+        this.radius = isWheel ? 22 : 6;
+        this.grounded = false;
+    }
+
+    update() {
+        let vx = (this.x - this.oldx) * FRICTION_AIR;
+        let vy = (this.y - this.oldy) * FRICTION_AIR;
+
+        this.oldx = this.x;
+        this.oldy = this.y;
+
+        this.x += vx;
+        this.y += vy + GRAVITY * this.mass;
+        this.grounded = false;
+    }
+
+    constrain(terrain) {
+        const idx = Math.floor(this.x / SEGMENT_WIDTH);
+        
+        // Erweiterter Kollisionscheck (überprüft 2 Segmente um Tunneling zu vermeiden)
+        for(let i = 0; i <= 1; i++) {
+            let checkIdx = idx + i;
+            if (checkIdx >= 0 && checkIdx < terrain.points.length - 1) {
+                const p1 = terrain.points[checkIdx];
+                const p2 = terrain.points[checkIdx + 1];
+                
+                // Wo sind wir relativ zum Segment?
+                if(this.x >= p1.x && this.x <= p2.x) {
+                    const t = (this.x - p1.x) / (p2.x - p1.x);
+                    const groundY = p1.y + t * (p2.y - p1.y);
+
+                    if (this.y + this.radius > groundY) {
+                        const dy = (this.y + this.radius) - groundY;
+                        
+                        // Position korrigieren
+                        this.y -= dy;
+                        
+                        // Reibung / Grip anwenden
+                        let vx = this.x - this.oldx;
+                        this.oldx = this.x - (vx * FRICTION_GROUND);
+                        
+                        // Vertikale Energie dämpfen (damit es nicht unendlich bounct)
+                        this.oldy = this.y - ((this.y - this.oldy) * 0.2); 
+
+                        this.grounded = true;
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+}
+
+class Stick {
+    constructor(p1, p2, stiffness, invisible = false) {
+        this.p1 = p1;
+        this.p2 = p2;
+        this.length = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        this.stiffness = stiffness;
+        this.invisible = invisible;
+    }
+
+    update() {
+        const dx = this.p2.x - this.p1.x;
+        const dy = this.p2.y - this.p1.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist === 0) return;
+
+        const diff = this.length - dist;
+        const percent = (diff / dist) / 2 * this.stiffness;
+        const offsetX = dx * percent;
+        const offsetY = dy * percent;
+
+        this.p1.x -= offsetX;
+        this.p1.y -= offsetY;
+        this.p2.x += offsetX;
+        this.p2.y += offsetY;
+    }
+}
+
+// ---------------------------------------------------------
+// GAME OBJECTS
+// ---------------------------------------------------------
+
+class Bike {
+    constructor(x, y) {
+        this.p0 = new Point(x, y, 1, true);       // Hinterrad
+        this.p1 = new Point(x + 95, y, 1, true);  // Vorderrad
+        this.p2 = new Point(x + 45, y - 55, 1);   // Chassis
+        this.p3 = new Point(x + 35, y - 100, 0.5); // Kopf
+
+        this.points = [this.p0, this.p1, this.p2, this.p3];
+
+        // Straffere Federung für hohe Geschwindigkeiten
+        this.sticks = [
+            new Stick(this.p0, this.p2, 0.3), // Härter
+            new Stick(this.p1, this.p2, 0.3), // Härter
+            new Stick(this.p0, this.p1, 0.9, true),
+            new Stick(this.p2, this.p3, 0.95),
+            new Stick(this.p0, this.p3, 0.9, true),
+            new Stick(this.p1, this.p3, 0.9, true)
+        ];
+    }
+
+    update(terrain) {
+        for (let p of this.points) p.update();
+        
+        // Mehr Iterationen für stabile Physik bei 100km/h
+        for (let i = 0; i < PHYSICS_ITERATIONS; i++) {
+            for (let s of this.sticks) s.update();
+            for (let p of this.points) p.constrain(terrain);
+        }
+
+        if (input.gas) {
+            let dx = this.p1.x - this.p0.x;
+            let dy = this.p1.y - this.p0.y;
+            let len = Math.hypot(dx, dy);
+            dx /= len; dy /= len;
+
+            // Massive Power bei Bodenkontakt
+            if (this.p0.grounded) {
+                this.p0.x += dx * ENGINE_POWER;
+                this.p0.y += dy * ENGINE_POWER;
+            } else {
+                 // Air Control leicht erhöht
+                 this.p0.x += 0.3; 
+            }
+        }
+
+        if (input.left) this.applyTorque(-ROTATION_FORCE);
+        if (input.right) this.applyTorque(ROTATION_FORCE);
+    }
+
+    applyTorque(dir) {
+        this.p0.x -= dir * 5;
+        this.p0.y += dir * 5;
+        this.p1.x += dir * 5;
+        this.p1.y -= dir * 5;
+    }
+
+    draw(ctx) {
+        ctx.lineWidth = 6;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
+        // Neon Body
+        ctx.strokeStyle = '#ff0055';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#ff0055';
+        ctx.beginPath();
+        ctx.moveTo(this.p0.x, this.p0.y);
+        ctx.lineTo(this.p2.x, this.p2.y);
+        ctx.lineTo(this.p1.x, this.p1.y);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Fahrer
+        ctx.strokeStyle = '#fff';
+        ctx.beginPath();
+        ctx.moveTo(this.p2.x, this.p2.y);
+        ctx.lineTo(this.p3.x, this.p3.y);
+        ctx.stroke();
+
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(this.p3.x, this.p3.y - 5, 9, 0, Math.PI*2);
+        ctx.fill();
+
+        this.drawWheel(ctx, this.p0);
+        this.drawWheel(ctx, this.p1);
+    }
+
+    drawWheel(ctx, p) {
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        
+        ctx.fillStyle = '#111';
+        ctx.beginPath(); ctx.arc(0, 0, p.radius, 0, Math.PI*2); ctx.fill();
+        
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(0, 0, p.radius - 4, 0, Math.PI*2); ctx.stroke();
+
+        let rotation = p.x / p.radius;
+        ctx.rotate(rotation);
+        
+        // Speed effekt an Felgen
+        ctx.strokeStyle = '#555';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-p.radius+4, 0); ctx.lineTo(p.radius-4, 0);
+        ctx.moveTo(0, -p.radius+4); ctx.lineTo(0, p.radius-4);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+}
+
+class Terrain {
+    constructor() {
+        this.points = [];
+        this.generate();
+    }
+
+    generate() {
+        this.points = [];
+        let y = height / 2 + 300;
+        let x = 0;
+        let slope = 0;
+        let slopeTarget = 0;
+
+        // Start
+        for(let i=0; i<15; i++) {
+            this.points.push({x: x, y: y});
+            x += SEGMENT_WIDTH;
+        }
+
+        // RAMPS & JUMPS GENERATOR
+        for(let i=0; i<LEVEL_LENGTH; i++) {
+            
+            // Wir ändern den Slope "Target" seltener -> Längere Hügel
+            if (i % 5 === 0) { 
+                slopeTarget = (Math.random() - 0.5) * 50; 
+            }
+            
+            // Smoother Übergang der Steigung
+            slope += (slopeTarget - slope) * 0.1;
+
+            // Begrenzung
+            if(slope > 45) slope = 45; // Steil nach unten
+            if(slope < -35) slope = -35; // Steil nach oben (Sprungschanze)
+
+            y += slope;
+
+            // Floor / Ceiling Limit mit weicher Korrektur
+            let centerOffset = (y - (height/2 + 400));
+            if (Math.abs(centerOffset) > 600) {
+                 slopeTarget -= Math.sign(centerOffset) * 20;
+            }
+
+            this.points.push({x: x, y: y});
+            x += SEGMENT_WIDTH;
+        }
+
+        // Ziel
+        let finalY = y;
+        for(let i=0; i<30; i++) {
+            this.points.push({x: x, y: finalY});
+            x += SEGMENT_WIDTH;
+        }
+    }
+
+    draw(ctx, camX, camY) {
+        const startIdx = Math.max(0, Math.floor(camX / SEGMENT_WIDTH) - 2);
+        const endIdx = Math.min(this.points.length, Math.ceil((camX + width) / SEGMENT_WIDTH) + 2);
+
+        // Boden Style
+        let grd = ctx.createLinearGradient(0, 0, 0, height);
+        grd.addColorStop(0, "#222");
+        grd.addColorStop(1, "#000");
+
+        ctx.fillStyle = '#0a0a0f';
+        ctx.strokeStyle = '#00d2ff';
+        ctx.lineWidth = 5;
+        
+        ctx.beginPath();
+        if(this.points[startIdx]) ctx.moveTo(this.points[startIdx].x, this.points[startIdx].y);
+
+        for (let i = startIdx; i < endIdx; i++) {
+            let p = this.points[i];
+            let nextP = this.points[i+1];
+            if (nextP) {
+                let midX = (p.x + nextP.x) / 2;
+                let midY = (p.y + nextP.y) / 2;
+                ctx.quadraticCurveTo(p.x, p.y, midX, midY);
+            } else {
+                ctx.lineTo(p.x, p.y);
+            }
+        }
+
+        ctx.lineTo(this.points[endIdx-1].x, this.points[endIdx-1].y + 3000);
+        ctx.lineTo(this.points[startIdx].x, this.points[startIdx].y + 3000);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Neon Glow Linie oben drauf
+        ctx.shadowBlur = 15;
+        ctx.shadowColor = '#00d2ff';
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+
+        // Ziellinie
+        const finishX = (15 + LEVEL_LENGTH) * SEGMENT_WIDTH;
+        if (finishX > camX && finishX < camX + width) {
+            let fy = this.points[15 + LEVEL_LENGTH].y;
+            this.drawFlag(ctx, finishX, fy);
+        }
+    }
+
+    drawFlag(ctx, x, y) {
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(x, y - 150, 8, 150);
+        // Karomuster
+        for(let r=0; r<5; r++) {
+            for(let c=0; c<5; c++) {
+                ctx.fillStyle = (r+c)%2===0 ? 'black' : 'white';
+                ctx.fillRect(x + 8 + c*15, y - 150 + r*15, 15, 15);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------
+// MAIN LOOP
+// ---------------------------------------------------------
+
+let bike, terrain;
+let gameState = 'MENU';
+let startTime = 0;
+let finishTime = 0;
+let timerActive = false;
+let camX = 0, camY = 0;
+
+function initGame() {
+    terrain = new Terrain(); 
+    bike = new Bike(200, terrain.points[3].y - 100);
+    
+    gameState = 'PLAYING';
+    timerActive = false;
+    startTime = 0;
+    camX = 0;
+    camY = 0;
+    
+    document.getElementById('timer-box').innerText = "00:00.00";
+    document.getElementById('menu-screen').classList.add('hidden');
+    requestAnimationFrame(loop);
+}
+
+function stopGame() {
+    gameState = 'FINISHED';
+    let timeStr = formatTime(finishTime - startTime);
+    document.getElementById('last-time').innerText = timeStr;
+    document.getElementById('result-text').innerText = "Neuer Versuch?";
+    document.getElementById('menu-screen').classList.remove('hidden');
+}
+
+function update() {
+    if (gameState !== 'PLAYING') return;
+
+    bike.update(terrain);
+
+    if (input.gas && !timerActive) {
+        timerActive = true;
+        startTime = Date.now();
+    }
+    if (timerActive) {
+        document.getElementById('timer-box').innerText = formatTime(Date.now() - startTime);
+    }
+
+    // Kamera: Folgt schneller und zentrierter
+    let targetCamX = bike.p2.x - width * 0.3;
+    let targetCamY = bike.p2.y - height * 0.6;
+    
+    camX += (targetCamX - camX) * 0.15; // Schnellerer Lerp
+    camY += (targetCamY - camY) * 0.15;
+    if (camX < 0) camX = 0;
+
+    // Win
+    if (bike.p2.x > (15 + LEVEL_LENGTH) * SEGMENT_WIDTH) {
+        finishTime = Date.now();
+        stopGame();
+    }
+
+    // Fail
+    if (bike.p3.constrain(terrain)) {
+        setTimeout(initGame, 500);
+    }
+    // Fall into abyss protection
+    if (bike.p2.y > terrain.points[Math.floor(bike.p2.x / SEGMENT_WIDTH)].y + 500) {
+         setTimeout(initGame, 500);
+    }
+}
+
+function draw() {
+    ctx.fillStyle = '#111';
+    ctx.fillRect(0, 0, width, height);
+
+    // Parallax
+    ctx.save();
+    ctx.translate(-camX * 0.1, -camY * 0.1);
+    
+    // Rote Sonne
+    let gradSun = ctx.createRadialGradient(width - 200, 200, 20, width - 200, 200, 150);
+    gradSun.addColorStop(0, "#ff0055");
+    gradSun.addColorStop(1, "rgba(255, 0, 85, 0)");
+    ctx.fillStyle = gradSun;
+    ctx.beginPath(); ctx.arc(width - 200, 200, 150, 0, Math.PI*2); ctx.fill();
+    
+    ctx.fillStyle = '#ffcc00'; 
+    ctx.beginPath(); ctx.arc(width - 200, 200, 40, 0, Math.PI*2); ctx.fill();
+    
+    ctx.restore();
+
+    // World
+    ctx.save();
+    ctx.translate(-camX, -camY);
+    terrain.draw(ctx, camX, camY);
+    bike.draw(ctx);
+    ctx.restore();
+}
+
+function loop() {
+    if (gameState === 'PLAYING') {
+        update();
+        draw();
+        requestAnimationFrame(loop);
+    }
+}
+
+function formatTime(ms) {
+    let min = Math.floor(ms / 60000);
+    let sec = Math.floor((ms % 60000) / 1000);
+    let cent = Math.floor((ms % 1000) / 10);
+    return (min<10?"0":"")+min + ":" + (sec<10?"0":"")+sec + "." + (cent<10?"0":"")+cent;
+}
+
+function startGame() { initGame(); }
+
+// Controls
+const setupBtn = (id, k) => {
+    const b = document.getElementById(id);
+    const start = (e) => { e.preventDefault(); input[k] = true; b.classList.add('pressed'); };
+    const end = (e) => { e.preventDefault(); input[k] = false; b.classList.remove('pressed'); };
+    b.addEventListener('mousedown', start); b.addEventListener('touchstart', start);
+    b.addEventListener('mouseup', end); b.addEventListener('touchend', end);
+    b.addEventListener('mouseleave', end);
+};
+setupBtn('btn-gas', 'gas');
+setupBtn('btn-left', 'left');
+setupBtn('btn-right', 'right');
+
+window.addEventListener('keydown', e => {
+    if(e.code==='ArrowUp'||e.code==='KeyW'||e.code==='Space') input.gas=true;
+    if(e.code==='ArrowLeft'||e.code==='KeyA') input.left=true;
+    if(e.code==='ArrowRight'||e.code==='KeyD') input.right=true;
+});
+window.addEventListener('keyup', e => {
+    if(e.code==='ArrowUp'||e.code==='KeyW'||e.code==='Space') input.gas=false;
+    if(e.code==='ArrowLeft'||e.code==='KeyA') input.left=false;
+    if(e.code==='ArrowRight'||e.code==='KeyD') input.right=false;
+});
+
+</script>
+</body>
+</html>
